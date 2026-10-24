@@ -1,0 +1,5 @@
+To-do list
+1. Finish the gateway policy file
+2. Write the evaluation harness
+3. Run the three configurations
+4. Add the results table to the report

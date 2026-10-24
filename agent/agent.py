@@ -7,6 +7,10 @@ import json, os, sys, urllib.request, uuid
 
 GATEWAY = os.getenv("GATEWAY_URL", "http://gateway:8080")
 MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "8"))
+# Configuration A (baseline): no gateway, the agent talks to the LLM and runs tools directly
+DIRECT = os.getenv("AGENT_DIRECT") == "1"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 
 SYSTEM = """You are an assistant agent that completes the user's task by calling tools.
 Available tools:
@@ -21,11 +25,21 @@ Reply with ONE JSON object only, no other text:
 After each tool call you receive an Observation. Keep going until you can give the final answer."""
 
 
-def post(path: str, data: dict, timeout: int = 400) -> dict:
-    req = urllib.request.Request(GATEWAY + path, data=json.dumps(data).encode(),
-                                 headers={"Content-Type": "application/json"})
+def _post_json(url: str, data: dict, timeout: int = 400) -> dict:
+    req = urllib.request.Request(url, data=json.dumps(data).encode(), headers={"Content-Type": "application/json"})
     with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=timeout) as r:
         return json.loads(r.read())
+
+
+def post(path: str, data: dict, timeout: int = 400) -> dict:
+    if not DIRECT:
+        return _post_json(GATEWAY + path, data, timeout)
+    if path == "/llm":
+        out = _post_json(OLLAMA_URL + "/api/chat", {"model": OLLAMA_MODEL, "messages": data["messages"],
+                         "stream": False, "format": "json", "options": {"temperature": 0}}, timeout)
+        return {"content": out.get("message", {}).get("content", "")}
+    from tools_direct import execute
+    return {"decision": "none", "status": "executed", "observation": execute(data["tool"], data["args"])}
 
 
 def parse(text: str) -> dict:

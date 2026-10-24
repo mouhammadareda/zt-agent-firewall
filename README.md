@@ -48,9 +48,15 @@ Switch configuration (`full` or `container_only`) by editing `ZT_MODE` in `.env`
 
 | Config | Description |
 |---|---|
-| A | No protection (agent with direct tool access) — harness in a later stage |
+| A | No protection — `agent_open` service: no hardening, no gateway, direct LLM/tools/network |
 | B | `ZT_MODE=container_only` — caged agent, gateway logs but does not enforce |
 | C | `ZT_MODE=full` — complete system |
+
+Run the evaluation (5 benign tasks + 6 attack scenarios on A, B, C):
+
+```bash
+python3 eval/run_eval.py --reps 3
+```
 
 Metrics: attack success rate (from `data/attacker/hits.jsonl` and the audit log, never from model
 text), benign utility, added latency, number of approvals.
