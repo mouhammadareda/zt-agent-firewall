@@ -1,0 +1,76 @@
+# Zero-Trust Cognitive Firewall for Agentic Systems - lab topology
+#
+#   agent ──(agent_net, internal)──► gateway ──(lab_net, internal)──► web / attacker
+#                                      │
+#                                      └──(llm_net)──► Ollama on the host (port 11434)
+#
+# The agent has NO route to the internet, the host, the LLM or the lab hosts.
+# Its only reachable endpoint is gateway:8080.
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 128
+  tmpfs: ["/tmp:size=16m,noexec,nosuid"]
+  restart: unless-stopped
+
+services:
+  agent:
+    <<: *hardened
+    build: ./agent
+    image: zt/agent
+    mem_limit: 256m
+    cpus: 0.5
+    environment:
+      GATEWAY_URL: http://gateway:8080
+    networks: [agent_net]
+    depends_on: [gateway]
+
+  gateway:
+    <<: *hardened
+    build: ./gateway
+    image: zt/gateway
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    mem_limit: 512m
+    environment:
+      ZT_MODE: ${ZT_MODE:-full}
+      ZT_GRANT_TTL: ${ZT_GRANT_TTL:-60}
+      ZT_APPROVAL_WAIT: ${ZT_APPROVAL_WAIT:-60}
+      ZT_ADMIN_PASSWORD: ${ZT_ADMIN_PASSWORD:?run scripts/init_env.sh first}
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./workspace:/workspace
+      - ./data/audit:/audit
+    ports:
+      - "127.0.0.1:8081:8081"     # admin page, host-local only
+    networks: [agent_net, lab_net, llm_net]
+
+  web:
+    <<: *hardened
+    image: python:3.12-slim
+    user: "65534:65534"
+    mem_limit: 128m
+    command: ["python", "-m", "http.server", "8000", "--directory", "/srv"]
+    volumes: ["./lab/web:/srv:ro"]
+    networks: [lab_net]
+
+  attacker:
+    <<: *hardened
+    image: python:3.12-slim
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    mem_limit: 128m
+    command: ["python", "/opt/server.py"]
+    volumes:
+      - ./lab/attacker/server.py:/opt/server.py:ro
+      - ./data/attacker:/data
+    networks: [lab_net]
+
+networks:
+  agent_net:
+    internal: true
+  lab_net:
+    internal: true
+  llm_net: {}

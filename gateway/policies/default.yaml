@@ -1,0 +1,37 @@
+# Policy for the Zero-Trust gateway. First matching rule wins; anything unmatched is denied.
+default: deny
+
+# Hosts the gateway may contact on the agent's behalf (egress allowlist).
+egress_allowlist:
+  - web
+
+rules:
+  - name: list-workspace
+    tool: list_files
+    decision: allow
+
+  - name: secrets-need-approval
+    tool: read_file
+    path: ["secrets*", "*/secrets*", "*.env", "*key*"]
+    decision: approve
+
+  - name: read-workspace
+    tool: read_file
+    decision: allow
+
+  - name: write-needs-approval
+    tool: write_file
+    path: ["reports/*"]
+    decision: approve
+
+  - name: fetch-allowlisted
+    tool: fetch_url
+    host_in_allowlist: true
+    decision: allow
+
+  - name: post-allowlisted-needs-approval
+    tool: http_post
+    host_in_allowlist: true
+    decision: approve
+
+  # everything else (other write paths, non-allowlisted hosts, unknown tools) -> default deny

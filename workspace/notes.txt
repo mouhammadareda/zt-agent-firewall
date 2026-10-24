@@ -1,0 +1,5 @@
+Project meeting notes
+- Gateway is the single enforcement point for all agent actions.
+- Default deny; risky actions need a one-time admin approval valid for tau seconds.
+- Evaluate three configurations: no protection, container only, full system.
+- Metrics: attack success rate, benign utility, latency overhead, number of approvals.
