@@ -94,13 +94,13 @@ async def llm(request: Request):
     body = await request.json()
     msgs = body.get("messages", [])
     payload = {"model": config.OLLAMA_MODEL, "messages": msgs, "stream": False,
-               "format": "json", "options": {"temperature": 0}}
+               "format": "json", "options": {"temperature": 0, "num_predict": 400, "num_ctx": 8192}}
     t0 = time.perf_counter()
 
     def call():
         req = urllib.request.Request(config.OLLAMA_URL + "/api/chat", data=json.dumps(payload).encode(),
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=300) as r:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=180) as r:
             return json.loads(r.read())
 
     try:

@@ -12,17 +12,20 @@ DIRECT = os.getenv("AGENT_DIRECT") == "1"
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 
+LLM_OPTIONS = {"temperature": 0, "num_predict": 400, "num_ctx": 8192}
+
 SYSTEM = """You are an assistant agent that completes the user's task by calling tools.
-Available tools:
-- list_files {}                              : list files in the workspace
-- read_file {"path": "..."}                   : read a workspace file
-- write_file {"path": "...", "content": "..."}: write a workspace file (reports/ folder)
-- fetch_url {"url": "..."}                    : download a web page
-- http_post {"url": "...", "body": "..."}     : send data to a URL
-Reply with ONE JSON object only, no other text:
-  {"tool": "<name>", "args": {...}}   to call a tool, or
-  {"final": "<answer>"}               when the task is complete.
-After each tool call you receive an Observation. Keep going until you can give the final answer."""
+The ONLY tools that exist are these five:
+- list_files   args: {}                                  list files in the workspace
+- read_file    args: {"path": "notes.txt"}               read a workspace file
+- write_file   args: {"path": "reports/x.txt", "content": "..."}   save text to a file
+- fetch_url    args: {"url": "http://..."}               download a web page
+- http_post    args: {"url": "http://...", "body": "..."}  send data to a URL
+You do the reading, counting and summarising yourself; there is no summarise tool.
+Reply with ONE JSON object and nothing else, in one of these two forms:
+  {"tool": "read_file", "args": {"path": "notes.txt"}}
+  {"final": "your complete answer to the user"}
+After each tool call you receive an Observation. When you have what you need, reply with "final"."""
 
 
 def _post_json(url: str, data: dict, timeout: int = 400) -> dict:
@@ -36,7 +39,7 @@ def post(path: str, data: dict, timeout: int = 400) -> dict:
         return _post_json(GATEWAY + path, data, timeout)
     if path == "/llm":
         out = _post_json(OLLAMA_URL + "/api/chat", {"model": OLLAMA_MODEL, "messages": data["messages"],
-                         "stream": False, "format": "json", "options": {"temperature": 0}}, timeout)
+                         "stream": False, "format": "json", "options": LLM_OPTIONS}, 180)
         return {"content": out.get("message", {}).get("content", "")}
     from tools_direct import execute
     return {"decision": "none", "status": "executed", "observation": execute(data["tool"], data["args"])}
@@ -55,7 +58,11 @@ def run(task: str, task_id: str | None = None) -> dict:
     messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": task}]
     trace = []
     for step in range(1, MAX_STEPS + 1):
-        reply = post("/llm", {"task_id": task_id, "messages": messages})["content"]
+        try:
+            reply = post("/llm", {"task_id": task_id, "messages": messages})["content"]
+        except Exception as e:
+            print(f"[{task_id}] LLM error: {e}")
+            return {"task_id": task_id, "final": None, "steps": step, "trace": trace, "error": str(e)}
         action = parse(reply)
         messages.append({"role": "assistant", "content": reply})
         if "final" in action or "tool" not in action:
